@@ -309,3 +309,119 @@ func IsWindowsReservedName(name string) bool {
 	
 	return false
 }
+
+// MapDockerVolume handles Docker Desktop Windows path mapping.
+// This addresses common issues with Windows Docker volume mounting.
+func MapDockerVolume(hostPath, containerPath string) (string, error) {
+	if hostPath == "" {
+		return containerPath, nil
+	}
+	
+	// Handle Docker Desktop Windows path mapping
+	if runtime.GOOS == "windows" {
+		// Convert Windows paths to Docker-compatible format
+		dockerPath := MapContainerPath(hostPath)
+		
+		// Handle WSL2 path conversion if needed
+		if strings.HasPrefix(dockerPath, "/c/") {
+			// Docker Desktop maps C: to /c/ in WSL2
+			return dockerPath, nil
+		}
+	}
+	
+	return hostPath, nil
+}
+
+// ResolveSymlinks safely resolves symlinks with depth limit.
+// Prevents infinite loops from circular symlinks.
+func ResolveSymlinks(path string, maxDepth int) (string, error) {
+	if maxDepth <= 0 {
+		return path, nil
+	}
+	
+	resolved := path
+	for i := 0; i < maxDepth; i++ {
+		info, err := filepath.EvalSymlinks(resolved)
+		if err != nil {
+			// If we can't resolve, return what we have
+			return resolved, nil
+		}
+		
+		if info == resolved {
+			// No more symlinks to resolve
+			break
+		}
+		
+		resolved = info
+	}
+	
+	return resolved, nil
+}
+
+// DetectProjectType analyzes files to determine project type.
+// Useful for multi-language project detection.
+func DetectProjectType(files []string) []string {
+	projectTypes := make(map[string]bool)
+	
+	for _, file := range files {
+		base := filepath.Base(file)
+		
+		switch base {
+		case "package.json":
+			projectTypes["nodejs"] = true
+		case "pom.xml":
+			projectTypes["maven"] = true
+		case "build.gradle", "build.gradle.kts":
+			projectTypes["gradle"] = true
+		case "Cargo.toml":
+			projectTypes["rust"] = true
+		case "go.mod":
+			projectTypes["golang"] = true
+		case "requirements.txt", "setup.py", "pyproject.toml":
+			projectTypes["python"] = true
+		case "composer.json":
+			projectTypes["php"] = true
+		case "Gemfile":
+			projectTypes["ruby"] = true
+		}
+	}
+	
+	var types []string
+	for projectType := range projectTypes {
+		types = append(types, projectType)
+	}
+	
+	return types
+}
+
+// IsMonorepo detects if the project structure indicates a monorepo.
+// Helps with complex project structure analysis.
+func IsMonorepo(files []string) bool {
+	indicators := []string{
+		"lerna.json",
+		"nx.json", 
+		"rush.json",
+		"pnpm-workspace.yaml",
+		"workspace.json",
+		".gitmodules",
+	}
+	
+	for _, file := range files {
+		base := filepath.Base(file)
+		for _, indicator := range indicators {
+			if base == indicator {
+				return true
+			}
+		}
+	}
+	
+	// Check for multiple package.json files (common monorepo pattern)
+	packageJsonCount := 0
+	for _, file := range files {
+		if filepath.Base(file) == "package.json" {
+			packageJsonCount++
+		}
+	}
+	
+	return packageJsonCount > 1
+}

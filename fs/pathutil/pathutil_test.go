@@ -16,6 +16,7 @@ package pathutil
 
 import (
 	"runtime"
+	"sort"
 	"testing"
 )
 
@@ -614,6 +615,145 @@ func TestIsWindowsReservedName(t *testing.T) {
 			result := IsWindowsReservedName(tt.filename)
 			if result != tt.expected {
 				t.Errorf("IsWindowsReservedName(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
+}f
+unc TestMapDockerVolume(t *testing.T) {
+	tests := []struct {
+		name          string
+		hostPath      string
+		containerPath string
+		expected      string
+	}{
+		{
+			name:          "Windows C drive mapping",
+			hostPath:      "C:\\Users\\test",
+			containerPath: "/app",
+			expected:      "/c/Users/test",
+		},
+		{
+			name:          "empty host path",
+			hostPath:      "",
+			containerPath: "/app",
+			expected:      "/app",
+		},
+		{
+			name:          "Unix path unchanged",
+			hostPath:      "/home/user",
+			containerPath: "/app",
+			expected:      "/home/user",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := MapDockerVolume(tt.hostPath, tt.containerPath)
+			if err != nil {
+				t.Errorf("MapDockerVolume(%q, %q) error = %v", tt.hostPath, tt.containerPath, err)
+				return
+			}
+			if result != tt.expected {
+				t.Errorf("MapDockerVolume(%q, %q) = %q, want %q", tt.hostPath, tt.containerPath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDetectProjectType(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		expected []string
+	}{
+		{
+			name:     "Node.js project",
+			files:    []string{"package.json", "src/index.js"},
+			expected: []string{"nodejs"},
+		},
+		{
+			name:     "Multi-language project",
+			files:    []string{"package.json", "pom.xml", "go.mod"},
+			expected: []string{"nodejs", "maven", "golang"},
+		},
+		{
+			name:     "Gradle Kotlin project",
+			files:    []string{"build.gradle.kts", "settings.gradle.kts"},
+			expected: []string{"gradle"},
+		},
+		{
+			name:     "Python project",
+			files:    []string{"requirements.txt", "setup.py", "src/main.py"},
+			expected: []string{"python"},
+		},
+		{
+			name:     "no project files",
+			files:    []string{"README.md", "src/code.txt"},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := DetectProjectType(tt.files)
+			
+			// Sort both slices for comparison
+			sort.Strings(result)
+			sort.Strings(tt.expected)
+			
+			if len(result) != len(tt.expected) {
+				t.Errorf("DetectProjectType(%v) = %v, want %v", tt.files, result, tt.expected)
+				return
+			}
+			
+			for i, v := range result {
+				if v != tt.expected[i] {
+					t.Errorf("DetectProjectType(%v) = %v, want %v", tt.files, result, tt.expected)
+					break
+				}
+			}
+		})
+	}
+}
+
+func TestIsMonorepo(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		expected bool
+	}{
+		{
+			name:     "Lerna monorepo",
+			files:    []string{"lerna.json", "packages/app1/package.json", "packages/app2/package.json"},
+			expected: true,
+		},
+		{
+			name:     "Nx monorepo",
+			files:    []string{"nx.json", "workspace.json", "apps/app1/package.json"},
+			expected: true,
+		},
+		{
+			name:     "Multiple package.json files",
+			files:    []string{"package.json", "frontend/package.json", "backend/package.json"},
+			expected: true,
+		},
+		{
+			name:     "Single project",
+			files:    []string{"package.json", "src/index.js", "README.md"},
+			expected: false,
+		},
+		{
+			name:     "No package files",
+			files:    []string{"README.md", "src/code.go"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsMonorepo(tt.files)
+			if result != tt.expected {
+				t.Errorf("IsMonorepo(%v) = %v, want %v", tt.files, result, tt.expected)
 			}
 		})
 	}
