@@ -183,3 +183,129 @@ func RemoveTrailingSlash(path string) string {
 	
 	return strings.TrimRight(path, "/\\")
 }
+
+// MapContainerPath maps a Windows host path to container path format.
+// This is essential for Windows Docker containers where paths need conversion.
+func MapContainerPath(hostPath string) string {
+	if hostPath == "" {
+		return hostPath
+	}
+	
+	// Convert to forward slashes first
+	path := filepath.ToSlash(hostPath)
+	
+	// Handle Windows drive letters in containers (C:/path -> /c/path)
+	if len(path) >= 2 && path[1] == ':' {
+		drive := strings.ToLower(string(path[0]))
+		path = "/" + drive + path[2:]
+	}
+	
+	return path
+}
+
+// NormalizeRegistryPath handles Windows registry paths consistently.
+// This is crucial for Windows-based extractors that scan registry.
+func NormalizeRegistryPath(regPath string) string {
+	if regPath == "" {
+		return regPath
+	}
+	
+	// Ensure consistent registry path format (backslashes)
+	regPath = strings.ReplaceAll(regPath, "/", "\\")
+	
+	// Handle common registry root abbreviations
+	replacements := map[string]string{
+		"HKLM\\": "HKEY_LOCAL_MACHINE\\",
+		"HKCU\\": "HKEY_CURRENT_USER\\",
+		"HKCR\\": "HKEY_CLASSES_ROOT\\",
+		"HKU\\":  "HKEY_USERS\\",
+		"HKCC\\": "HKEY_CURRENT_CONFIG\\",
+	}
+	
+	for abbrev, full := range replacements {
+		if strings.HasPrefix(regPath, abbrev) {
+			regPath = full + regPath[len(abbrev):]
+			break
+		}
+	}
+	
+	return regPath
+}
+
+// ResolveWindowsServicePath resolves Windows service executable paths.
+// Services often have quoted paths with arguments that need parsing.
+func ResolveWindowsServicePath(servicePath string) string {
+	if servicePath == "" {
+		return servicePath
+	}
+	
+	// Handle quoted paths with arguments
+	if strings.HasPrefix(servicePath, "\"") {
+		endQuote := strings.Index(servicePath[1:], "\"")
+		if endQuote != -1 {
+			return servicePath[1 : endQuote+1]
+		}
+	}
+	
+	// Handle unquoted paths (split on first space)
+	parts := strings.Fields(servicePath)
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	
+	return servicePath
+}
+
+// ExpandWindowsPath expands Windows environment variables in paths.
+// Common in Windows configurations and registry entries.
+func ExpandWindowsPath(path string) string {
+	if runtime.GOOS != "windows" {
+		return path
+	}
+	
+	// Common Windows environment variable expansions
+	expansions := map[string]string{
+		"%SystemRoot%":    "C:\\Windows",
+		"%ProgramFiles%":  "C:\\Program Files",
+		"%ProgramFiles(x86)%": "C:\\Program Files (x86)",
+		"%USERPROFILE%":   "C:\\Users\\Default",
+		"%APPDATA%":       "C:\\Users\\Default\\AppData\\Roaming",
+		"%LOCALAPPDATA%":  "C:\\Users\\Default\\AppData\\Local",
+		"%TEMP%":          "C:\\Windows\\Temp",
+		"%WINDIR%":        "C:\\Windows",
+	}
+	
+	for envVar, expansion := range expansions {
+		path = strings.ReplaceAll(path, envVar, expansion)
+	}
+	
+	return path
+}
+
+// IsWindowsReservedName checks if a filename is a Windows reserved name.
+// Important for cross-platform compatibility and security.
+func IsWindowsReservedName(name string) bool {
+	if name == "" {
+		return false
+	}
+	
+	// Remove extension for checking
+	baseName := strings.ToUpper(name)
+	if dotIndex := strings.LastIndex(baseName, "."); dotIndex != -1 {
+		baseName = baseName[:dotIndex]
+	}
+	
+	reservedNames := []string{
+		"CON", "PRN", "AUX", "NUL",
+		"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	}
+	
+	for _, reserved := range reservedNames {
+		if baseName == reserved {
+			return true
+		}
+	}
+	
+	return false
+}

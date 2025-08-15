@@ -403,4 +403,218 @@ func TestRemoveTrailingSlash(t *testing.T) {
 // Helper function to check if a path contains a Windows drive letter
 func containsDriveLetter(path string) bool {
 	return len(path) >= 2 && path[1] == ':'
+}f
+unc TestMapContainerPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		hostPath string
+		expected string
+	}{
+		{
+			name:     "Windows C drive",
+			hostPath: "C:\\Users\\test",
+			expected: "/c/Users/test",
+		},
+		{
+			name:     "Windows D drive",
+			hostPath: "D:/data/files",
+			expected: "/d/data/files",
+		},
+		{
+			name:     "Unix path unchanged",
+			hostPath: "/home/user/data",
+			expected: "/home/user/data",
+		},
+		{
+			name:     "empty path",
+			hostPath: "",
+			expected: "",
+		},
+		{
+			name:     "relative path",
+			hostPath: "relative/path",
+			expected: "relative/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := MapContainerPath(tt.hostPath)
+			if result != tt.expected {
+				t.Errorf("MapContainerPath(%q) = %q, want %q", tt.hostPath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNormalizeRegistryPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		regPath  string
+		expected string
+	}{
+		{
+			name:     "HKLM abbreviation",
+			regPath:  "HKLM\\Software\\Test",
+			expected: "HKEY_LOCAL_MACHINE\\Software\\Test",
+		},
+		{
+			name:     "HKCU abbreviation",
+			regPath:  "HKCU\\Software\\Test",
+			expected: "HKEY_CURRENT_USER\\Software\\Test",
+		},
+		{
+			name:     "forward slashes converted",
+			regPath:  "HKLM/Software/Test",
+			expected: "HKEY_LOCAL_MACHINE\\Software\\Test",
+		},
+		{
+			name:     "already full path",
+			regPath:  "HKEY_LOCAL_MACHINE\\Software\\Test",
+			expected: "HKEY_LOCAL_MACHINE\\Software\\Test",
+		},
+		{
+			name:     "empty path",
+			regPath:  "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NormalizeRegistryPath(tt.regPath)
+			if result != tt.expected {
+				t.Errorf("NormalizeRegistryPath(%q) = %q, want %q", tt.regPath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveWindowsServicePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		servicePath string
+		expected    string
+	}{
+		{
+			name:        "quoted path with arguments",
+			servicePath: "\"C:\\Program Files\\Service\\service.exe\" -arg1 -arg2",
+			expected:    "C:\\Program Files\\Service\\service.exe",
+		},
+		{
+			name:        "unquoted path with arguments",
+			servicePath: "C:\\Windows\\System32\\svchost.exe -k NetworkService",
+			expected:    "C:\\Windows\\System32\\svchost.exe",
+		},
+		{
+			name:        "path without arguments",
+			servicePath: "C:\\Windows\\System32\\services.exe",
+			expected:    "C:\\Windows\\System32\\services.exe",
+		},
+		{
+			name:        "empty path",
+			servicePath: "",
+			expected:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ResolveWindowsServicePath(tt.servicePath)
+			if result != tt.expected {
+				t.Errorf("ResolveWindowsServicePath(%q) = %q, want %q", tt.servicePath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExpandWindowsPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "SystemRoot expansion",
+			path:     "%SystemRoot%\\System32\\drivers",
+			expected: "C:\\Windows\\System32\\drivers",
+		},
+		{
+			name:     "ProgramFiles expansion",
+			path:     "%ProgramFiles%\\Common Files",
+			expected: "C:\\Program Files\\Common Files",
+		},
+		{
+			name:     "multiple expansions",
+			path:     "%SystemRoot%\\%TEMP%\\test",
+			expected: "C:\\Windows\\C:\\Windows\\Temp\\test",
+		},
+		{
+			name:     "no expansion needed",
+			path:     "C:\\Direct\\Path",
+			expected: "C:\\Direct\\Path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ExpandWindowsPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("ExpandWindowsPath(%q) = %q, want %q", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsWindowsReservedName(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		expected bool
+	}{
+		{
+			name:     "CON reserved",
+			filename: "CON",
+			expected: true,
+		},
+		{
+			name:     "CON with extension",
+			filename: "CON.txt",
+			expected: true,
+		},
+		{
+			name:     "COM1 reserved",
+			filename: "COM1",
+			expected: true,
+		},
+		{
+			name:     "LPT1 reserved",
+			filename: "LPT1.dat",
+			expected: true,
+		},
+		{
+			name:     "normal filename",
+			filename: "document.txt",
+			expected: false,
+		},
+		{
+			name:     "contains reserved but not exact",
+			filename: "CONSOLE.exe",
+			expected: false,
+		},
+		{
+			name:     "empty name",
+			filename: "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsWindowsReservedName(tt.filename)
+			if result != tt.expected {
+				t.Errorf("IsWindowsReservedName(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
 }
